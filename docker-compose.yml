@@ -1,0 +1,41 @@
+name: fund-quant
+services:
+  api:
+    image: ghcr.io/jjrexwang/fund-quant:latest
+    container_name: fund-quant-api
+    environment:
+      DATABASE_URL: sqlite:////data/fundquant.db
+      JWT_SECRET: ${JWT_SECRET:-change-this-secret-in-env}
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      SEED_DEMO: ${SEED_DEMO:-true}
+      TZ: Asia/Shanghai
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+
+  worker:
+    image: ghcr.io/jjrexwang/fund-quant:latest
+    container_name: fund-quant-worker
+    command: ["python", "worker.py"]
+    environment:
+      DATABASE_URL: sqlite:////data/fundquant.db
+      JWT_SECRET: ${JWT_SECRET:-change-this-secret-in-env}
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      SEED_DEMO: ${SEED_DEMO:-true}
+      TZ: Asia/Shanghai
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+
+  gateway:
+    image: nginx:alpine
+    container_name: fund-quant-web
+    ports:
+      - "18082:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+    restart: unless-stopped

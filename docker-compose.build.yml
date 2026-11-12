@@ -1,0 +1,10 @@
+# 本地构建覆盖(可选): docker compose -f docker-compose.yml -f docker-compose.build.yml build
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile

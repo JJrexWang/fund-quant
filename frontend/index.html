@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>基金量化分析系统 · 财富中心</title>
+<link rel="stylesheet" href="style.css">
+<script src="vendor/echarts.min.js"></script>
+</head>
+<body>
+<div id="login">
+  <div class="login-card">
+    <div class="logo">📈</div>
+    <h1>基金量化分析系统</h1>
+    <p>银行财富中心 · 内部研究与销售辅助</p>
+    <input id="lg-user" placeholder="用户名" autocomplete="username">
+    <input id="lg-pw" type="password" placeholder="密码" autocomplete="current-password">
+    <button class="primary" id="lg-btn">登录</button>
+    <p id="lg-err" style="color:var(--red);margin-top:10px"></p>
+  </div>
+</div>
+
+<div id="app">
+ <div class="layout">
+  <aside class="sidebar">
+    <div class="brand"><div>基金量化分析</div><small>财富中心 · 内部系统</small></div>
+    <nav id="nav">
+      <a href="#/dashboard" data-r="dashboard">📊 <span>仪表盘</span></a>
+      <a href="#/watch" data-r="watch">🎯 <span>销售跟踪</span></a>
+      <a href="#/screening" data-r="screening">🧭 <span>代销筛选</span></a>
+      <a href="#/industry" data-r="industry">🏭 <span>行业与市场</span></a>
+      <a href="#/system" data-r="system">⚙️ <span>系统管理</span></a>
+      <a href="#/users" data-r="users" id="nav-users" style="display:none">👤 <span>账号管理</span></a>
+    </nav>
+    <div class="foot">免费数据源 · AkShare/东财直连<br>历史业绩不代表未来<br>不构成收益承诺</div>
+  </aside>
+  <div class="main">
+    <div class="topbar">
+      <span id="tb-regime" class="tag blue">市场状态 —</span>
+      <span class="hint" id="tb-date"></span>
+      <div class="search">
+        <input id="tb-q" placeholder="基金代码/名称 回车直达详情" style="width:230px">
+        <span class="bell" id="tb-bell">🔔<span class="dot" id="tb-bell-n" style="display:none">0</span></span>
+        <span id="tb-user" class="hint"></span>
+        <button id="tb-pw">修改密码</button>
+        <button id="tb-out">退出</button>
+      </div>
+    </div>
+    <div class="content" id="content"></div>
+  </div>
+ </div>
+</div>
+
+<div class="drawer" id="alert-drawer">
+  <h3>达标提醒历史 <button style="float:right" onclick="document.getElementById('alert-drawer').classList.remove('open')">关闭</button></h3>
+  <div id="alert-list"></div>
+</div>
+
+<div class="modal-bg" id="modal-bg"><div class="modal" id="modal"></div></div>
+<div class="toast" id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>
