@@ -27,7 +27,7 @@ async function doLogin(){
     const d = await r.json();
     if(!r.ok) throw new Error(d.detail||"登录失败");
     token=d.token; me=d; localStorage.setItem("fq_token",token);
-    api("/me").then(u=>{ me=u; applyMe(); }).catch(()=>{});
+    api("/me").then(u=>{ me=u; applyMe(); route(); }).catch(()=>{});
     $("#login").style.display="none"; $("#app").style.display="block";
     $("#tb-user").textContent = d.username+" ("+d.role+")";
     route();
@@ -46,7 +46,7 @@ $("#tb-pw").onclick = ()=>{
   $("#pw-save").onclick = async ()=>{
     try{
       await api("/me/password",{method:"POST",body:JSON.stringify({old_password:$("#pw-old").value,new_password:$("#pw-new").value})});
-      closeModal(); toast("密码已修改, 下次登录生效"); me.using_default_password = $("#pw-new").value==="admin";
+      closeModal(); toast("密码已修改, 下次登录生效"); me.using_default_password = $("#pw-new").value==="admin"; route();
     }catch(e){ toast(e.message); }
   };
 };
@@ -260,8 +260,8 @@ async function pageFund(c, q){
     </div>`;
     const dates = d.series.map(s=>s.date), navs = d.series.map(s=>s.nav);
     let peak=-1e9; const dd = navs.map(n=>{ peak=Math.max(peak,n); return +(((n/peak)-1)*100).toFixed(2); });
-    echarts.init($("#chart-nav")).setOption({title:{text:"单位净值走势(近3年)"},tooltip:{trigger:"axis"},xAxis:{type:"category",data:dates},yAxis:{type:"value",scale:true},series:[{type:"line",data:navs,smooth:true,areaStyle:{opacity:.08},color:"#2563eb"}],dataZoom:[{type:"inside"}]});
-    echarts.init($("#chart-dd")).setOption({title:{text:"回撤(水下图 %)"},tooltip:{trigger:"axis"},xAxis:{type:"category",data:dates},yAxis:{type:"value"},series:[{type:"line",data:dd,areaStyle:{color:"rgba(3,152,85,.25)"},color:"#039855"}],dataZoom:[{type:"inside"}]});
+    echarts.init($("#chart-nav")).setOption({title:{text:"单位净值走势(近3年)",textStyle:{color:"rgba(255,255,255,.85)",fontSize:13}},tooltip:{trigger:"axis",backgroundColor:"#3a3a3c",borderColor:"rgba(255,255,255,.12)",textStyle:{color:"#fff"}},xAxis:{type:"category",data:dates,axisLabel:{color:"rgba(255,255,255,.55)"},axisLine:{lineStyle:{color:"rgba(255,255,255,.12)"}}},yAxis:{type:"value",scale:true,axisLabel:{color:"rgba(255,255,255,.55)"},splitLine:{lineStyle:{color:"rgba(255,255,255,.06)"}}},series:[{type:"line",data:navs,smooth:true,areaStyle:{opacity:.12},color:"#0a84ff"}],dataZoom:[{type:"inside"}]});
+    echarts.init($("#chart-dd")).setOption({title:{text:"回撤(水下图 %)",textStyle:{color:"rgba(255,255,255,.85)",fontSize:13}},tooltip:{trigger:"axis",backgroundColor:"#3a3a3c",borderColor:"rgba(255,255,255,.12)",textStyle:{color:"#fff"}},xAxis:{type:"category",data:dates,axisLabel:{color:"rgba(255,255,255,.55)"},axisLine:{lineStyle:{color:"rgba(255,255,255,.12)"}}},yAxis:{type:"value",axisLabel:{color:"rgba(255,255,255,.55)"},splitLine:{lineStyle:{color:"rgba(255,255,255,.06)"}}},series:[{type:"line",data:dd,areaStyle:{color:"rgba(255,159,10,.18)"},color:"#ff9f0a"}],dataZoom:[{type:"inside"}]});
   }catch(e){
     c.innerHTML = `<div class="panel">加载失败: ${e.message}<br><span class="hint">请确认基金代码正确(6位), 或稍后重试(免费数据源限流时可能失败)</span></div>`;
   }
@@ -276,7 +276,7 @@ async function pageIndustry(c){
   ${rows.map(r=>`<tr><td>${r.rank}</td><td>${r.name}</td><td class="${cls(r.r1w)}">${pct(r.r1w)}</td><td class="${cls(r.r1m)}">${pct(r.r1m)}</td><td class="${cls(r.r3m)}">${pct(r.r3m)}</td><td>${r.stance==="超配"?'<span class="tag red">超配</span>':r.stance==="低配"?'<span class="tag">低配</span>':'<span class="tag blue">标配</span>'}</td></tr>`).join("")}</table>`
   : '<p class="hint">暂无行业数据</p>'}</div>`;
   if(rows.length){
-    echarts.init($("#ind-chart")).setOption({title:{text:"近1月涨跌幅 %"},tooltip:{},xAxis:{type:"value"},yAxis:{type:"category",inverse:true,data:rows.map(r=>r.name)},series:[{type:"bar",data:rows.map(r=>({value:+fmt(r.r1m),itemStyle:{color:r.r1m>=0?"#d92d20":"#039855"}}))}]});
+    echarts.init($("#ind-chart")).setOption({title:{text:"近1月涨跌幅 %",textStyle:{color:"rgba(255,255,255,.85)",fontSize:13}},tooltip:{backgroundColor:"#3a3a3c",borderColor:"rgba(255,255,255,.12)",textStyle:{color:"#fff"}},xAxis:{type:"value",axisLabel:{color:"rgba(255,255,255,.55)"},splitLine:{lineStyle:{color:"rgba(255,255,255,.06)"}}},yAxis:{type:"category",inverse:true,data:rows.map(r=>r.name),axisLabel:{color:"rgba(255,255,255,.75)"},axisLine:{lineStyle:{color:"rgba(255,255,255,.12)"}}},series:[{type:"bar",data:rows.map(r=>({value:+fmt(r.r1m),itemStyle:{color:r.r1m>=0?"#ff453a":"#30d158"}}))}]});
   }
 }
 // ---------- 系统 ----------
@@ -298,7 +298,7 @@ async function pageSystem(c){
 }
 async function runJob(job){ await api("/system/run-job",{method:"POST",body:JSON.stringify({job})}); toast("任务已启动, 稍后刷新查看日志"); }
 // ---------- 启动 ----------
-if(token){ $("#login").style.display="none"; $("#app").style.display="block"; api("/me").then(u=>{ me=u; applyMe(); }).catch(()=>{}); route(); refreshBell(); }
+if(token){ $("#login").style.display="none"; $("#app").style.display="block"; api("/me").then(u=>{ me=u; applyMe(); route(); }).catch(()=>{}); route(); refreshBell(); }
 $("#tb-date").textContent = new Date().toLocaleDateString("zh-CN",{year:"numeric",month:"long",day:"numeric",weekday:"long"});
 
 // ---------- 账号管理 ----------
@@ -338,3 +338,17 @@ async function pageUsers(c){
   };
   render();
 }
+
+/* 侧边栏: 桌面收起/展开, 移动端抽屉 */
+(function(){
+  var t = document.getElementById("sb-toggle");
+  if (t) t.addEventListener("click", function(){
+    if (window.innerWidth < 1024) document.body.classList.toggle("sb-open");
+    else document.body.classList.toggle("sb-collapsed");
+  });
+  var ov = document.getElementById("sb-overlay");
+  if (ov) ov.addEventListener("click", function(){ document.body.classList.remove("sb-open"); });
+  document.querySelectorAll("#nav a").forEach(function(a){
+    a.addEventListener("click", function(){ document.body.classList.remove("sb-open"); });
+  });
+})();
