@@ -5,9 +5,8 @@
 单文件、零依赖(仅 Python 标准库)。输出统一为 JSON,便于 Agent 解析。
 
 配置(环境变量):
-  FUNDQ_URL      服务地址, 默认 http://192.168.99.4:18082
-                 注意: 外网地址 https://fund.jjrex.duckdns.org:88 是给人用浏览器的,
-                 外层还有飞牛 fnOS 的 Web 登录验证, API Key 穿不过去, Agent 勿用。
+  FUNDQ_URL      服务地址, 默认 http://192.168.99.4:18082(局域网);
+                 外网可用 https://fund.jjrex.duckdns.org:88 (Lucky 反代, 认证已关, 密钥直达)。
   FUNDQ_API_KEY  管理后台「Agent 接入」页生成的密钥(fqk_ 开头)
                  read  = 只读查询; write = 含写操作
 

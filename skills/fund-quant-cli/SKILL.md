@@ -8,17 +8,14 @@ description: "接入银行财富中心「基金量化分析系统」: 销售跟�
 本系统是银行财富中心的内部研究与销售辅助工具（不承诺收益，结论仅供内部参考）。
 你（Agent）通过 API Key 调用它的分析与数据。**接入只需三步，不需要向任何人要更多文档。**
 
-## 地址与双层验证（先看这里）
+## 地址（两个都能用）
 
-系统有两个地址，验证层数不同，别用错：
+- **外网地址 `https://fund.jjrex.duckdns.org:88`（默认用这个）**：经 Lucky 反向代理直达系统，
+  Lucky 层的网页认证已关闭，带 API Key 即可从任何网络调用 API；
+  网页访问也走这个地址，靠系统自己的账号登录保护。
+- **局域网地址 `http://192.168.99.4:18082`**：同一系统、同一套 API Key，在局域网内时可用这个（更快、不过公网）。
 
-- **局域网地址 `http://192.168.99.4:18082`（Agent 调用用这个）**：只有系统自身的验证，
-  带上 API Key 即可直达 API，无其他门槛。
-- **外网地址 `https://fund.jjrex.duckdns.org:88`（人用浏览器访问）**：**双层验证**——
-  外层是飞牛 fnOS 的 Web 登录验证（门户账号会话），先过这一层才摸到系统；
-  内层是系统自己的登录验证（网页账号密码 / API Key）。
-  未持有 fnOS 登录会话时，外层会直接拦下请求（返回登录页或 403），**API Key 单独穿不过外层**。
-  所以 Agent 不要拿外网地址调 API；在同一局域网/VPN 内时一律用局域网地址。
+两个地址的 `FUNDQ_URL` 二选一即可，密钥通用。
 
 ## 第一步：拿到 API Key
 
@@ -32,7 +29,7 @@ description: "接入银行财富中心「基金量化分析系统」: 销售跟�
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/JJrexWang/fund-quant/main/tools/fundq.py -o fundq.py
-export FUNDQ_URL=http://192.168.99.4:18082
+export FUNDQ_URL=https://fund.jjrex.duckdns.org:88
 export FUNDQ_API_KEY=fqk_...        # 第一步拿到的密钥
 python3 fundq.py me                 # 自检: 应返回 role=agent 与 scopes
 ```
@@ -44,9 +41,9 @@ python3 fundq.py me                 # 自检: 应返回 role=agent 与 scopes
 所有接口带请求头 `X-API-Key: <redacted>` Bearer fqk_...`），返回 JSON：
 
 ```bash
-curl -s http://192.168.99.4:18082/api/me -H "X-API-Key: <key>"
-curl -s http://192.168.99.4:18082/api/watch -H "X-API-Key: <key>"
-curl -s -X POST http://192.168.99.4:18082/api/watch/update -H "X-API-Key: <key>"   # write 档
+curl -s https://fund.jjrex.duckdns.org:88/api/me -H "X-API-Key: <key>"
+curl -s https://fund.jjrex.duckdns.org:88/api/watch -H "X-API-Key: <key>"
+curl -s -X POST https://fund.jjrex.duckdns.org:88/api/watch/update -H "X-API-Key: <key>"   # write 档
 ```
 
 端点全集（GET 除注明外）：
