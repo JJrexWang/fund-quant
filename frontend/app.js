@@ -18,7 +18,7 @@ function applyMe(){
   if(!me) return;
   $("#tb-user").textContent = me.username+" ("+me.role+")";
   const nu = $("#nav-users"); if(nu) nu.style.display = me.role==="admin" ? "flex" : "none";
-  const na = $("#nav-agents"); if(na) na.style.display = me.role==="admin" ? "flex" : "none";
+  const na = $("#nav-agents"); if(na) na.style.display = "flex";
 }
 function logout(){ token=""; localStorage.removeItem("fq_token"); $("#app").style.display="none"; $("#login").style.display="flex"; }
 async function doLogin(){
@@ -306,7 +306,7 @@ $("#tb-date").textContent = new Date().toLocaleDateString("zh-CN",{year:"numeric
 
 // ---------- Agent 接入管理 ----------
 async function pageAgents(c){
-  if(!me || me.role!=="admin"){ c.innerHTML = '<div class="panel">仅管理员可管理 Agent 接入。</div>'; return; }
+  const isAdmin = me && me.role==="admin";
   const base = location.origin;
   c.innerHTML = `
   <div class="panel"><h3>Agent 接入 <span class="sub">给 Muse / WorkBuddy 等外部 Agent 发放 API Key，通过配套 CLI(fundq)调用本系统的分析与数据</span></h3>
@@ -314,9 +314,9 @@ async function pageAgents(c){
     权限分两档：<b>read</b> 只读查询（跟踪/提醒/筛选结果/基金详情/行业/市场状态）；<b>write</b> 含写操作（增删跟踪、刷新净值、导入代销池、发起筛选、标记已联系）。发布名单、账号与密钥管理仍只限网页 admin。<br>
     密钥明文<b>只在创建时显示一次</b>，库里只存哈希；丢了就吊销重建。每次调用都会记审计日志。</p>
   </div>
-  <div class="panel"><h3>新建密钥</h3>
-    <div class="toolbar">
-      <input id="ak-name" placeholder="接入方名称, 如 Muse-办公本 / WorkBuddy" style="min-width:260px">
+  ${isAdmin ? `<div class="panel"><h3>新建密钥</h3>` : `<div class="panel"><h3>新建密钥</h3><p class="hint">密钥的创建、吊销与删除由管理员(admin)操作；你可以查看现有密钥、调用记录与接入说明，需要新密钥请联系管理员。</p>`}
+    ${isAdmin ? `<div class="toolbar">
+      <input id="ak-name" placeholder="接入方名称, 如 Muse-办公本 / WorkBuddy" style="min-width:260px">` : '<div style="display:none">'}
       <label><input type="checkbox" id="ak-read" checked disabled> read 只读</label>
       <label><input type="checkbox" id="ak-write"> write 可写</label>
       <button class="primary" onclick="createAgentKey()">生成密钥</button>
@@ -343,7 +343,7 @@ async function renderAgentKeys(){
     ${keys.map(k=>`<tr><td><b>${k.name}</b></td><td><code>${k.prefix}…</code></td><td>${k.scopes.map(s=>`<span class="tag ${s==='write'?'blue':''}">${s}</span>`).join(" ")}</td>
     <td>${(k.created_at||"").slice(0,16)}</td><td>${k.last_used_at? k.last_used_at.slice(0,16) : "从未"}</td>
     <td>${k.revoked? '<span class="tag">已吊销</span>' : '<span class="tag blue">有效</span>'}</td>
-    <td>${k.revoked? `<button onclick="delAgentKey(${k.id})">删除</button>` : `<button onclick="revokeAgentKey(${k.id})">吊销</button>`}</td></tr>`).join("")}</table>`
+    <td>${(me && me.role==="admin") ? (k.revoked? `<button onclick="delAgentKey(${k.id})">删除</button>` : `<button onclick="revokeAgentKey(${k.id})">吊销</button>`) : '<span class="hint">—</span>'}</td></tr>`).join("")}</table>`
     : '<p class="hint">还没有密钥，上面建一个。</p>';
   const logs = await api("/agent-keys/logs");
   $("#ak-logs").innerHTML = logs.length ? `<table><tr><th>时间</th><th>密钥</th><th>方法</th><th>路径</th><th>状态</th></tr>

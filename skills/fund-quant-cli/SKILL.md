@@ -36,7 +36,7 @@ description: "通过 fundq CLI 调用银行财富中心「基金量化分析系�
 - `fundq.py screen run [--regime 进攻|均衡|防御]` — 后台执行，用 `screen runs` 轮询状态
 - `fundq.py system run-job watch_update|market_regime|industry_sw`
 
-不可用（仅网页 admin）：发布建议名单、账号管理、密钥管理。遇到 403 先看是不是档位不够，不要反复重试。
+不可用（仅网页 admin）：发布建议名单、账号管理、密钥的创建/吊销（密钥列表与调用记录所有网页账号可看）。遇到 403 先看是不是档位不够，不要反复重试。
 
 ## 输出与口径
 

@@ -101,6 +101,10 @@ def health():
     return {"ok": True, "time": datetime.now().isoformat()}
 
 # ---------- 账号管理(仅 admin) ----------
+def require_web_user(user):
+    if user.get("role") not in ("admin", "manager", "viewer"):
+        raise HTTPException(403, "仅网页登录用户可查看")
+
 def require_admin(user):
     if user.get("role") != "admin":
         raise HTTPException(403, "仅管理员(admin 网页登录)可执行此操作")
@@ -435,7 +439,7 @@ def key_out(k: ApiKey):
 
 @app.get("/api/agent-keys")
 def list_agent_keys(user=Depends(current_user), db=Depends(get_db)):
-    require_admin(user)
+    require_web_user(user)
     return [key_out(k) for k in db.query(ApiKey).order_by(ApiKey.id.desc()).all()]
 
 @app.post("/api/agent-keys")
@@ -471,7 +475,7 @@ def delete_agent_key(kid: int, user=Depends(current_user), db=Depends(get_db)):
 
 @app.get("/api/agent-keys/logs")
 def agent_key_logs(user=Depends(current_user), db=Depends(get_db)):
-    require_admin(user)
+    require_web_user(user)
     return [{"id": l.id, "key_name": l.key_name, "method": l.method, "path": l.path,
              "status": l.status, "at": str(l.created_at)}
             for l in db.query(ApiCallLog).order_by(ApiCallLog.id.desc()).limit(100).all()]
