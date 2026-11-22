@@ -18,6 +18,7 @@ function applyMe(){
   if(!me) return;
   $("#tb-user").textContent = me.username+" ("+me.role+")";
   const nu = $("#nav-users"); if(nu) nu.style.display = me.role==="admin" ? "flex" : "none";
+  const na = $("#nav-agents"); if(na) na.style.display = me.role==="admin" ? "flex" : "none";
 }
 function logout(){ token=""; localStorage.removeItem("fq_token"); $("#app").style.display="none"; $("#login").style.display="flex"; }
 async function doLogin(){
@@ -80,6 +81,7 @@ function route(){
   else if(page==="industry") pageIndustry(c);
   else if(page==="system") pageSystem(c);
   else if(page==="users") pageUsers(c);
+  else if(page==="agents") pageAgents(c);
   else if(page==="fund") pageFund(c, decodeURIComponent(arg||""));
   else pageDashboard(c);
 }
@@ -300,6 +302,70 @@ async function runJob(job){ await api("/system/run-job",{method:"POST",body:JSON
 // ---------- 启动 ----------
 if(token){ $("#login").style.display="none"; $("#app").style.display="block"; api("/me").then(u=>{ me=u; applyMe(); route(); }).catch(()=>{}); route(); refreshBell(); }
 $("#tb-date").textContent = new Date().toLocaleDateString("zh-CN",{year:"numeric",month:"long",day:"numeric",weekday:"long"});
+
+
+// ---------- Agent 接入管理 ----------
+async function pageAgents(c){
+  if(!me || me.role!=="admin"){ c.innerHTML = '<div class="panel">仅管理员可管理 Agent 接入。</div>'; return; }
+  const base = location.origin;
+  c.innerHTML = `
+  <div class="panel"><h3>Agent 接入 <span class="sub">给 Muse / WorkBuddy 等外部 Agent 发放 API Key，通过配套 CLI(fundq)调用本系统的分析与数据</span></h3>
+    <p class="hint">服务地址 <code>${base}</code> · 鉴权方式：请求头 <code>X-API-Key: fqk_...</code>（或 Authorization: Bearer fqk_...）<br>
+    权限分两档：<b>read</b> 只读查询（跟踪/提醒/筛选结果/基金详情/行业/市场状态）；<b>write</b> 含写操作（增删跟踪、刷新净值、导入代销池、发起筛选、标记已联系）。发布名单、账号与密钥管理仍只限网页 admin。<br>
+    密钥明文<b>只在创建时显示一次</b>，库里只存哈希；丢了就吊销重建。每次调用都会记审计日志。</p>
+  </div>
+  <div class="panel"><h3>新建密钥</h3>
+    <div class="toolbar">
+      <input id="ak-name" placeholder="接入方名称, 如 Muse-办公本 / WorkBuddy" style="min-width:260px">
+      <label><input type="checkbox" id="ak-read" checked disabled> read 只读</label>
+      <label><input type="checkbox" id="ak-write"> write 可写</label>
+      <button class="primary" onclick="createAgentKey()">生成密钥</button>
+    </div>
+    <div id="ak-new"></div>
+  </div>
+  <div class="panel"><h3>密钥列表</h3><div id="ak-list">加载中…</div></div>
+  <div class="panel"><h3>CLI 快速上手</h3>
+    <p class="hint">配套工具在代码仓库 <code>tools/fundq.py</code>（单文件、零依赖），配套技能在 <code>skills/fund-quant-cli/</code>，把这两样交给目标 Agent 即可。手动调用示例：</p>
+    <pre class="code">export FUNDQ_URL=${base}
+export FUNDQ_API_KEY=fqk_...        # 上面生成的密钥
+python3 fundq.py dashboard          # 仪表盘汇总(JSON)
+python3 fundq.py watch list         # 销售跟踪
+python3 fundq.py fund 000001        # 基金详情与指标
+python3 fundq.py screen results 3   # 某轮筛选结果
+python3 fundq.py watch refresh      # (write)刷新净值并触发达标判定</pre>
+  </div>
+  <div class="panel"><h3>调用审计 <span class="sub">最近 100 条</span></h3><div id="ak-logs">加载中…</div></div>`;
+  renderAgentKeys();
+}
+async function renderAgentKeys(){
+  const keys = await api("/agent-keys");
+  $("#ak-list").innerHTML = keys.length ? `<table><tr><th>名称</th><th>密钥前缀</th><th>权限</th><th>创建</th><th>最近使用</th><th>状态</th><th>操作</th></tr>
+    ${keys.map(k=>`<tr><td><b>${k.name}</b></td><td><code>${k.prefix}…</code></td><td>${k.scopes.map(s=>`<span class="tag ${s==='write'?'blue':''}">${s}</span>`).join(" ")}</td>
+    <td>${(k.created_at||"").slice(0,16)}</td><td>${k.last_used_at? k.last_used_at.slice(0,16) : "从未"}</td>
+    <td>${k.revoked? '<span class="tag">已吊销</span>' : '<span class="tag blue">有效</span>'}</td>
+    <td>${k.revoked? `<button onclick="delAgentKey(${k.id})">删除</button>` : `<button onclick="revokeAgentKey(${k.id})">吊销</button>`}</td></tr>`).join("")}</table>`
+    : '<p class="hint">还没有密钥，上面建一个。</p>';
+  const logs = await api("/agent-keys/logs");
+  $("#ak-logs").innerHTML = logs.length ? `<table><tr><th>时间</th><th>密钥</th><th>方法</th><th>路径</th><th>状态</th></tr>
+    ${logs.map(l=>`<tr><td>${(l.at||"").slice(0,19)}</td><td>${l.key_name}</td><td>${l.method}</td><td><code>${l.path}</code></td><td>${l.status}</td></tr>`).join("")}</table>`
+    : '<p class="hint">暂无调用记录</p>';
+}
+async function createAgentKey(){
+  const name = $("#ak-name").value.trim();
+  if(!name){ toast("先填接入方名称"); return; }
+  const scopes = ["read"]; if($("#ak-write").checked) scopes.push("write");
+  try{
+    const r = await api("/agent-keys", {method:"POST", body: JSON.stringify({name, scopes})});
+    $("#ak-new").innerHTML = `<div class="banner warn">🔑 新密钥（<b>只显示这一次</b>，请立即复制保存）：<br><code style="font-size:14px;word-break:break-all">${r.api_key}</code><br>
+      <button onclick="navigator.clipboard&&navigator.clipboard.writeText('${r.api_key}');toast('已复制')">复制密钥</button>
+      <span class="hint">配置：export FUNDQ_API_KEY=${r.api_key}</span></div>`;
+    $("#ak-name").value = ""; renderAgentKeys();
+  }catch(e){ toast(e.message); }
+}
+async function revokeAgentKey(id){ if(!confirm("吊销后该密钥立即失效，确定？")) return;
+  try{ await api(`/agent-keys/${id}/revoke`, {method:"POST"}); toast("已吊销"); renderAgentKeys(); }catch(e){ toast(e.message); } }
+async function delAgentKey(id){ if(!confirm("删除该密钥记录，确定？")) return;
+  try{ await api("/agent-keys/"+id, {method:"DELETE"}); toast("已删除"); renderAgentKeys(); }catch(e){ toast(e.message); } }
 
 // ---------- 账号管理 ----------
 async function pageUsers(c){

@@ -137,3 +137,7 @@ body.sb-collapsed .foot-btns{flex-direction:column}
   .lights{display:none}
 }
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* Agent 接入页: 代码块 */
+pre.code{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:12px 14px;overflow-x:auto;font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:12px;line-height:1.65}
+code{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:.92em}

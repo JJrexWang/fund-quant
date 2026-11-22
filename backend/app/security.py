@@ -24,3 +24,10 @@ def make_token(username: str, role: str) -> str:
 
 def parse_token(token: str):
     return jwt.decode(token, SECRET, algorithms=[ALGO])
+
+def gen_api_key():
+    raw = "fqk_" + secrets.token_urlsafe(32)
+    return raw, raw[:12], hashlib.sha256(raw.encode()).hexdigest()
+
+def hash_api_key(raw: str) -> str:
+    return hashlib.sha256((raw or "").encode()).hexdigest()

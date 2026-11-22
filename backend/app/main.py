@@ -7,8 +7,8 @@ from typing import Optional
 import jwt as jwtlib
 
 from db import Base, engine, SessionLocal, get_db
-from models import User, WatchRecord, Alert, AgencyPool, ScreeningRun, ScreeningResult, JobLog, NavHistory
-from security import hash_password, verify_password, make_token, parse_token
+from models import User, WatchRecord, Alert, AgencyPool, ScreeningRun, ScreeningResult, JobLog, NavHistory, ApiKey, ApiCallLog
+from security import hash_password, verify_password, make_token, parse_token, gen_api_key, hash_api_key
 import jobs as jobmod
 import sources
 
@@ -48,14 +48,33 @@ def seed():
 seed()
 
 # ---------- 鉴权 ----------
-def current_user(authorization: str = Header(default="")):
+def _agent_principal(raw_key: str, db):
+    k = db.query(ApiKey).filter_by(key_hash=hash_api_key(raw_key), revoked=False).first()
+    if not k:
+        raise HTTPException(401, "API Key 无效或已吊销")
+    k.last_used_at = datetime.now()
+    db.commit()
+    return {"username": f"agent:{k.name}", "role": "agent", "key_id": k.id, "key_name": k.name,
+            "scopes": {s.strip() for s in (k.scopes or "read").split(",") if s.strip()}}
+
+def current_user(authorization: str = Header(default=""), x_api_key: str = Header(default=""), db=Depends(get_db)):
+    if x_api_key:
+        return _agent_principal(x_api_key.strip(), db)
     if not authorization.startswith("Bearer "):
         raise HTTPException(401, "未登录")
+    token = authorization[7:].strip()
+    if token.startswith("fqk_"):
+        return _agent_principal(token, db)
     try:
-        p = parse_token(authorization[7:])
-        return {"username": p["sub"], "role": p.get("role", "manager")}
+        p = parse_token(token)
+        return {"username": p["sub"], "role": p.get("role", "manager"), "scopes": {"read", "write"}}
     except jwtlib.PyJWTError:
         raise HTTPException(401, "登录已过期")
+
+def need(user, scope: str):
+    """scope 门禁: read=只读查询, write=写操作。网页登录用户(JWT)恒有 read+write; Agent 按密钥 scopes。"""
+    if scope not in user.get("scopes", {"read", "write"}):
+        raise HTTPException(403, f"该 API Key 无 {scope} 权限")
 
 class LoginIn(BaseModel):
     username: str
@@ -70,9 +89,12 @@ def login(body: LoginIn, db=Depends(get_db)):
 
 @app.get("/api/me")
 def me(user=Depends(current_user), db=Depends(get_db)):
+    if user.get("role") == "agent":
+        return {"username": user["username"], "role": "agent", "key_name": user.get("key_name"),
+                "scopes": sorted(user.get("scopes", [])), "using_default_password": False}
     u = db.query(User).filter_by(username=user["username"]).first()
     using_default = bool(u and verify_password(DEFAULT_PASSWORD, u.password_hash))
-    return {**user, "using_default_password": using_default}
+    return {"username": user["username"], "role": user["role"], "using_default_password": using_default}
 
 @app.get("/api/health")
 def health():
@@ -81,7 +103,7 @@ def health():
 # ---------- 账号管理(仅 admin) ----------
 def require_admin(user):
     if user.get("role") != "admin":
-        raise HTTPException(403, "仅管理员可管理账号")
+        raise HTTPException(403, "仅管理员(admin 网页登录)可执行此操作")
 
 class UserIn(BaseModel):
     username: str
@@ -143,6 +165,7 @@ def change_my_password(body: MyPwIn, user=Depends(current_user), db=Depends(get_
 # ---------- 仪表盘 ----------
 @app.get("/api/dashboard")
 def dashboard(user=Depends(current_user), db=Depends(get_db)):
+    need(user, "read")
     watches = db.query(WatchRecord).all()
     alerts = db.query(Alert).order_by(Alert.id.desc()).limit(10).all()
     regime = jobmod.get_kv(db, "market_regime", {})
@@ -185,10 +208,12 @@ def watch_out(w: WatchRecord):
 
 @app.get("/api/watch")
 def list_watch(user=Depends(current_user), db=Depends(get_db)):
+    need(user, "read")
     return [watch_out(w) for w in db.query(WatchRecord).order_by(WatchRecord.id).all()]
 
 @app.post("/api/watch")
 def add_watch(body: WatchIn, user=Depends(current_user), db=Depends(get_db)):
+    need(user, "write")
     code = body.fund_code.strip().zfill(6)
     name = body.fund_name or ""
     if not name:
@@ -203,6 +228,7 @@ def add_watch(body: WatchIn, user=Depends(current_user), db=Depends(get_db)):
 
 @app.put("/api/watch/{wid}")
 def edit_watch(wid: int, body: WatchIn, user=Depends(current_user), db=Depends(get_db)):
+    need(user, "write")
     w = db.get(WatchRecord, wid)
     if not w: raise HTTPException(404, "记录不存在")
     w.sale_date = datetime.strptime(body.sale_date, "%Y-%m-%d").date()
@@ -216,22 +242,26 @@ def edit_watch(wid: int, body: WatchIn, user=Depends(current_user), db=Depends(g
 
 @app.delete("/api/watch/{wid}")
 def del_watch(wid: int, user=Depends(current_user), db=Depends(get_db)):
+    need(user, "write")
     w = db.get(WatchRecord, wid)
     if w: db.delete(w); db.commit()
     return {"ok": True}
 
 @app.post("/api/watch/update")
 def update_watch(user=Depends(current_user)):
+    need(user, "write")
     return jobmod.update_watchlist()
 
 @app.get("/api/alerts")
 def list_alerts(user=Depends(current_user), db=Depends(get_db)):
+    need(user, "read")
     return [{"id": a.id, "fund_code": a.fund_code, "fund_name": a.fund_name, "date": str(a.triggered_date),
              "ret_pct": a.ret_pct, "nav": a.nav, "contacted": a.contacted}
             for a in db.query(Alert).order_by(Alert.id.desc()).limit(100).all()]
 
 @app.post("/api/alerts/{aid}/contacted")
 def mark_contacted(aid: int, user=Depends(current_user), db=Depends(get_db)):
+    need(user, "write")
     a = db.get(Alert, aid)
     if a: a.contacted = True; db.commit()
     return {"ok": True}
@@ -239,6 +269,7 @@ def mark_contacted(aid: int, user=Depends(current_user), db=Depends(get_db)):
 # ---------- 代销池 ----------
 @app.get("/api/pool")
 def list_pool(user=Depends(current_user), db=Depends(get_db)):
+    need(user, "read")
     return [{"id": p.id, "fund_code": p.fund_code, "fund_name": p.fund_name, "fund_type": p.fund_type, "risk_level": p.risk_level}
             for p in db.query(AgencyPool).filter_by(batch="default").order_by(AgencyPool.id).all()]
 
@@ -247,6 +278,7 @@ class PoolIn(BaseModel):
 
 @app.post("/api/pool/add")
 def pool_add(body: PoolIn, user=Depends(current_user), db=Depends(get_db)):
+    need(user, "write")
     added = 0
     for raw in body.codes:
         code = str(raw).strip().zfill(6)
@@ -261,12 +293,14 @@ def pool_add(body: PoolIn, user=Depends(current_user), db=Depends(get_db)):
 
 @app.delete("/api/pool/{pid}")
 def pool_del(pid: int, user=Depends(current_user), db=Depends(get_db)):
+    need(user, "write")
     p = db.get(AgencyPool, pid)
     if p: db.delete(p); db.commit()
     return {"ok": True}
 
 @app.post("/api/pool/import")
 async def pool_import(file: UploadFile = File(...), user=Depends(current_user), db=Depends(get_db)):
+    need(user, "write")
     content = await file.read()
     codes = []
     fname = (file.filename or "").lower()
@@ -301,6 +335,7 @@ class ScreenIn(BaseModel):
 
 @app.post("/api/screening/run")
 def screening_run(body: ScreenIn, user=Depends(current_user)):
+    need(user, "write")
     # 同步执行可能数分钟: 放后台线程, 前端轮询 runs 状态
     def _run():
         try: jobmod.run_screening(regime=body.regime, weights=body.weights)
@@ -310,12 +345,14 @@ def screening_run(body: ScreenIn, user=Depends(current_user)):
 
 @app.get("/api/screening/runs")
 def screening_runs(user=Depends(current_user), db=Depends(get_db)):
+    need(user, "read")
     return [{"id": r.id, "created_at": str(r.created_at), "regime": r.regime, "status": r.status,
              "universe": r.universe_count, "pool": r.pool_count, "note": r.note}
             for r in db.query(ScreeningRun).order_by(ScreeningRun.id.desc()).limit(20).all()]
 
 @app.get("/api/screening/runs/{rid}/results")
 def screening_results(rid: int, user=Depends(current_user), db=Depends(get_db)):
+    need(user, "read")
     return [{"fund_code": r.fund_code, "fund_name": r.fund_name, "fund_type": r.fund_type, "score": r.score,
              "persist": r.persist, "risk_adj": r.risk_adj, "dd_score": r.dd_score, "momentum": r.momentum,
              "long_score": r.long_score, "max_dd": r.max_dd, "sharpe": r.sharpe, "calmar": r.calmar,
@@ -332,6 +369,7 @@ def screening_publish(rid: int, user=Depends(current_user), db=Depends(get_db)):
 # ---------- 基金详情 ----------
 @app.get("/api/funds/{code}")
 def fund_detail(code: str, user=Depends(current_user), db=Depends(get_db)):
+    need(user, "read")
     code = code.strip().zfill(6)
     name, hist = sources.em_fund_history(code)
     for d, nav in hist:
@@ -355,10 +393,12 @@ def fund_detail(code: str, user=Depends(current_user), db=Depends(get_db)):
 # ---------- 行业与系统 ----------
 @app.get("/api/industry")
 def industry(user=Depends(current_user), db=Depends(get_db)):
+    need(user, "read")
     return jobmod.get_kv(db, "industry_sw", {"rows": [], "updated": None})
 
 @app.post("/api/system/run-job")
 def run_job(body: dict, user=Depends(current_user)):
+    need(user, "write")
     job = body.get("job")
     def _run():
         try:
@@ -371,6 +411,7 @@ def run_job(body: dict, user=Depends(current_user)):
 
 @app.get("/api/system/status")
 def system_status(user=Depends(current_user), db=Depends(get_db)):
+    need(user, "read")
     logs = db.query(JobLog).order_by(JobLog.id.desc()).limit(30).all()
     return {"jobs": [{"id": l.id, "job": l.job, "status": l.status, "started": str(l.started_at),
                       "finished": str(l.finished_at) if l.finished_at else None, "detail": l.detail} for l in logs],
@@ -380,6 +421,79 @@ def system_status(user=Depends(current_user), db=Depends(get_db)):
                 {"name": "BaoStock", "role": "股票/指数校验(预留)", "note": "免费免注册"},
                 {"name": "官方源", "role": "指数成分/行业分类季度校准(人工)", "note": "中证/申万/巨潮"},
             ], "algo_version": jobmod.ALGO_VERSION}
+
+
+# ---------- Agent 接入管理(仅 admin 网页登录) ----------
+class ApiKeyIn(BaseModel):
+    name: str
+    scopes: Optional[list] = ["read"]
+
+def key_out(k: ApiKey):
+    return {"id": k.id, "name": k.name, "prefix": k.key_prefix, "scopes": (k.scopes or "read").split(","),
+            "created_by": k.created_by, "created_at": str(k.created_at),
+            "last_used_at": str(k.last_used_at) if k.last_used_at else None, "revoked": bool(k.revoked)}
+
+@app.get("/api/agent-keys")
+def list_agent_keys(user=Depends(current_user), db=Depends(get_db)):
+    require_admin(user)
+    return [key_out(k) for k in db.query(ApiKey).order_by(ApiKey.id.desc()).all()]
+
+@app.post("/api/agent-keys")
+def create_agent_key(body: ApiKeyIn, user=Depends(current_user), db=Depends(get_db)):
+    require_admin(user)
+    name = (body.name or "").strip()
+    if not name or len(name) > 64:
+        raise HTTPException(400, "名称必填且不超过 64 字")
+    scopes = [s for s in (body.scopes or ["read"]) if s in ("read", "write")]
+    if not scopes:
+        raise HTTPException(400, "至少选择一个权限")
+    raw, prefix, kh = gen_api_key()
+    k = ApiKey(name=name, key_prefix=prefix, key_hash=kh, scopes=",".join(scopes), created_by=user["username"])
+    db.add(k); db.commit(); db.refresh(k)
+    out = key_out(k)
+    out["api_key"] = raw  # 明文仅此一次返回, 之后不可再查
+    return out
+
+@app.post("/api/agent-keys/{kid}/revoke")
+def revoke_agent_key(kid: int, user=Depends(current_user), db=Depends(get_db)):
+    require_admin(user)
+    k = db.get(ApiKey, kid)
+    if not k: raise HTTPException(404, "密钥不存在")
+    k.revoked = True; db.commit()
+    return {"ok": True}
+
+@app.delete("/api/agent-keys/{kid}")
+def delete_agent_key(kid: int, user=Depends(current_user), db=Depends(get_db)):
+    require_admin(user)
+    k = db.get(ApiKey, kid)
+    if k: db.delete(k); db.commit()
+    return {"ok": True}
+
+@app.get("/api/agent-keys/logs")
+def agent_key_logs(user=Depends(current_user), db=Depends(get_db)):
+    require_admin(user)
+    return [{"id": l.id, "key_name": l.key_name, "method": l.method, "path": l.path,
+             "status": l.status, "at": str(l.created_at)}
+            for l in db.query(ApiCallLog).order_by(ApiCallLog.id.desc()).limit(100).all()]
+
+# ---------- Agent 调用审计中间件 ----------
+@app.middleware("http")
+async def audit_agent_calls(request, call_next):
+    response = await call_next(request)
+    try:
+        raw = request.headers.get("x-api-key") or ""
+        auth = request.headers.get("authorization", "")
+        if not raw and auth.startswith("Bearer fqk_"):
+            raw = auth[7:].strip()
+        if raw and request.url.path.startswith("/api/"):
+            db = SessionLocal()
+            k = db.query(ApiKey).filter_by(key_hash=hash_api_key(raw)).first()
+            db.add(ApiCallLog(key_id=k.id if k else None, key_name=k.name if k else "(无效密钥)",
+                              method=request.method, path=request.url.path, status=response.status_code))
+            db.commit(); db.close()
+    except Exception:
+        pass
+    return response
 
 # ---------- 静态前端(镜像内文件, 避免宿主机文件权限问题) ----------
 from fastapi.staticfiles import StaticFiles

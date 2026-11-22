@@ -111,3 +111,25 @@ class KV(Base):
     key = Column(String(64), primary_key=True)
     value = Column(Text, default="{}")
     updated_at = Column(DateTime, onupdate=func.now(), server_default=func.now())
+
+class ApiKey(Base):
+    __tablename__ = "api_keys"
+    id = Column(Integer, primary_key=True)
+    name = Column(String(64), nullable=False)          # 接入方标识, 如 Muse-办公本 / WorkBuddy
+    key_prefix = Column(String(16), default="")        # 明文前 12 位, 仅供辨认
+    key_hash = Column(String(64), unique=True, nullable=False)  # sha256(明文), 明文不入库
+    scopes = Column(String(64), default="read")        # 逗号分隔: read,write
+    created_by = Column(String(64), default="")
+    created_at = Column(DateTime, server_default=func.now())
+    last_used_at = Column(DateTime)
+    revoked = Column(Boolean, default=False)
+
+class ApiCallLog(Base):
+    __tablename__ = "api_call_logs"
+    id = Column(Integer, primary_key=True)
+    key_id = Column(Integer, index=True)
+    key_name = Column(String(64), default="")
+    method = Column(String(8), default="")
+    path = Column(String(256), default="")
+    status = Column(Integer, default=0)
+    created_at = Column(DateTime, server_default=func.now())
